@@ -55,7 +55,6 @@ public class ToggleCommand implements DesirePathsSub {
         final boolean newToggle = plugin.getToggleManager().toggle(playerId);
         final String toggleStatus = newToggle ? "on" : "off";
 
-        player.sendMessage("IsToggleMode? " + toggleStatus);
         player.sendMessage(ChatColor.GREEN + "DesirePaths toggled " + toggleStatus + "!");
      }
 

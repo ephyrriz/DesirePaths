@@ -1,0 +1,21 @@
+## All messages of the plugin used
+messages:
+
+  # General
+  wrong-usage: "§4Incorrect Usage! Try: /desirepaths <reload|toggle|maintenance> [player]"
+  no-perms: "§4You don't have permission for this command."
+
+  # Toggle command
+  toggle-change-on: "§2Now you create paths after yourself"
+  toggle-change-off: "§cYou don't create paths after yourself anymore"
+  toggle-other-change-on: "§2You turned on paths creation for the player %p" # %p stands for player's name
+  toggle-other-change-off: "§cYou turned off paths creation for the player %p" # %p stands for player's name
+  toggle-other-no-player: "§4Unable to find online player with name %p" # %p stands for player's name
+  toggle-too-many-args: "§2Usage: /desirepaths toggle [player]"
+
+  # Reload command
+  config-reloaded: "§2DesirePaths configuration reloaded!"
+
+  # Maintenance command
+  maintenance-enabled: "§cMaintenance mode turned on"
+  maintenance-disabled: "§2Maintenance mode turned off"
