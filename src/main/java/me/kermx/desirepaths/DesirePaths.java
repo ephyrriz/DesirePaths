@@ -1,27 +1,30 @@
 package me.kermx.desirepaths;
 
 import me.kermx.desirepaths.commands.DesirePathsCommand;
+import me.kermx.desirepaths.files.Config;
 import me.kermx.desirepaths.integrations.*;
+import me.kermx.desirepaths.listeners.PlayerMoveEventListener;
 import me.kermx.desirepaths.managers.ToggleManager;
+import me.kermx.desirepaths.schedulers.PathScheduler;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.GameMode;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
+import org.bukkit.command.PluginCommand;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.AbstractHorse;
 import org.bukkit.entity.Boat;
 import org.bukkit.entity.Pig;
 import org.bukkit.entity.Player;
-import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
-import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.plugin.PluginManager;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.*;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.logging.Logger;
 
 // new features:
 // speed boost when walking on paths
@@ -31,44 +34,11 @@ import java.util.concurrent.ThreadLocalRandom;
 // different block switch and/or biome chance modifiers
 // itemsadder blocks?
 
-
 public final class DesirePaths extends JavaPlugin implements Listener {
-    private List<String> disabledWorlds;
-    private boolean movementCheckEnabled;
-    private int noBootsChance;
-    private int leatherBootsChance;
-    private int hasBootsChance;
-    private int featherFallingChance;
-    private int ridingHorseChance;
-    private int ridingBoatChance;
-    private int ridingPigChance;
-    private int sprintingBlockBelowChance;
-    private int sprintingBlockAtFeetChance;
-    private int crouchingBlockBelowChance;
-    private int crouchingBlockAtFeetChance;
-    private int attemptFrequency;
-    private List<String> blockBelowSwitcherConfig;
-    private List<String> blockAtFeetSwitcherConfig;
-    public boolean pathsOnlyWherePlayerCanBreakTowny;
-    public boolean pathsInWildernessTowny;
-    public boolean noPathsInAnyTown;
-    public boolean pathsOnlyWherePlayerCanBreakGriefPrevention;
-    public boolean pathsInWildernessGriefPrevention;
-    public boolean noPathsInAnyClaimGriefPrevention;
-    public boolean displayFlag;
-    public String flagDisplayName;
-    public String flagDisplayDescription;
-    public String flagDisplayMaterial;
-    public boolean defaultFlagState;
-    public boolean logPathsToCoreProtect;
-    private boolean enableInCreativeMode;
+    private Config fileConfig;
+    private Logger logger;
 
-    private final ThreadLocalRandom random = ThreadLocalRandom.current();
-
-    private enum modifierType {
-        NO_BOOTS, LEATHER_BOOTS, HAS_BOOTS, FEATHER_FALLING, RIDING_HORSE, RIDING_BOAT, RIDING_PIG
-    }
-
+    private PlayerMoveEventListener playerMove;
     private TownyIntegration townyIntegration;
     private WorldGuardIntegration worldGuardIntegration;
     private LandsPathIntegration landsPathIntegration;
@@ -82,96 +52,97 @@ public final class DesirePaths extends JavaPlugin implements Listener {
     public boolean coreProtectEnabled;
 
     private ToggleManager toggleManager;
-    DesirePathsCommand desirePathsCommand = new DesirePathsCommand(this);
 
     @Override
     public void onLoad() {
+        loadLogger();
+        loadConfig();
+        loadCommand();
+        loadToggleManager();
+        startScheduler();
+        checkForDependencies();
+    }
+
+    /**
+     * Loads config.
+     */
+    private void loadConfig() {
         saveDefaultConfig();
         getConfig().options().copyDefaults(true);
         saveConfig();
-        loadConfig();
+        fileConfig = new Config(getConfig(), getLogger());
+    }
 
-        if (Bukkit.getPluginManager().getPlugin("Towny") != null){
-            try {
-                townyIntegration = new TownyIntegration(this);
-            } catch (NoClassDefFoundError ignored){
-            }
-        }
-        if (Bukkit.getPluginManager().getPlugin("WorldGuard") != null) {
-            try {
-                worldGuardIntegration = new WorldGuardIntegration();
-                worldGuardIntegration.preloadWorldGuardIntegration();
-            } catch (NoClassDefFoundError ignored) {
-            }
-        }
-        if (Bukkit.getPluginManager().getPlugin("Lands") != null){
-            try {
-                landsPathIntegration = new LandsPathIntegration(this);
-                landsPathIntegration.loadLandsIntegration();
-            } catch (NoClassDefFoundError ignored){
-            }
-        }
-        if (Bukkit.getPluginManager().getPlugin("GriefPrevention") != null){
-            try {
-                griefPreventionIntegration = new GriefPreventionIntegration(this);
-            } catch (NoClassDefFoundError ignored){
-            }
+    /**
+     * Loads logger.
+     */
+    private void loadLogger() {
+        logger = getLogger();
+    }
+
+    private void loadToggleManager() {
+        new ToggleManager(this);
+    }
+
+    /**
+     * Loads command.
+     */
+    private void loadCommand() {
+        final PluginCommand command = getCommand("desirepaths");
+        final DesirePathsCommand desirePathsCommand = new DesirePathsCommand(this);
+
+        if (command != null) {
+            command.setExecutor(desirePathsCommand);
+            command.setTabCompleter(desirePathsCommand);
         }
     }
 
-    // PlayerMoveEvent related stuff
-    private boolean playerHasMoved = false;
+    private void startScheduler() {
+        new PathScheduler(this, playerMove, fileConfig).startScheduler();
+    }
 
-    @EventHandler
-    private void onPlayerMove(PlayerMoveEvent event) {
-        if (!movementCheckEnabled) {
-            return; // Do nothing if movementCheckEnabled is false
+    /**
+     * Checks for dependencies and adds them if they present.
+     */
+    private void checkForDependencies() {
+        final PluginManager pluginManager = getServer().getPluginManager();
+
+        if (pluginManager.getPlugin("Towny") != null){
+            try {
+                townyIntegration = new TownyIntegration(this);
+            } catch (NoClassDefFoundError ignored){}
         }
 
-        double deltaX = Math.abs(event.getFrom().getX() - event.getTo().getX());
-        double deltaZ = Math.abs(event.getFrom().getZ() - event.getTo().getZ());
+        if (pluginManager.getPlugin("WorldGuard") != null) {
+            try {
+                worldGuardIntegration = new WorldGuardIntegration();
+                worldGuardIntegration.preloadWorldGuardIntegration();
+            } catch (NoClassDefFoundError ignored) {}
+        }
 
-        playerHasMoved = deltaX > 0.01 || deltaZ > 0.01;
+        if (pluginManager.getPlugin("Lands") != null){
+            try {
+                landsPathIntegration = new LandsPathIntegration(this);
+                landsPathIntegration.loadLandsIntegration();
+            } catch (NoClassDefFoundError ignored){}
+        }
+
+        if (pluginManager.getPlugin("GriefPrevention") != null){
+            try {
+                griefPreventionIntegration = new GriefPreventionIntegration(this);
+            } catch (NoClassDefFoundError ignored){}
+        }
+
+        if (pluginManager.getPlugin("CoreProtect") != null) {
+            try {
+                coreProtectIntegration = new CoreProtectIntegration(this);
+            } catch (NoClassDefFoundError ignored) {}
+        }
     }
 
     @Override
     public void onEnable() {
-
-        // initialize reload & toggle command
-        Objects.requireNonNull(getCommand("desirepaths")).setExecutor(desirePathsCommand);
-        Objects.requireNonNull(getCommand("desirepaths")).setTabCompleter(desirePathsCommand);
-
-        // initialize togglemanager
-        toggleManager = new ToggleManager(this);
-
-        // initialize coreprotect integration
-        if (Bukkit.getPluginManager().getPlugin("CoreProtect") != null)
-            try {
-                coreProtectIntegration = new CoreProtectIntegration(this);
-            } catch (NoClassDefFoundError ignored){
-            }
-
-        // Plugin startup logic
-        Bukkit.getScheduler().runTaskTimerAsynchronously(this, () -> {
-            for (Player player : Bukkit.getOnlinePlayers()) {
-                if (movementCheckEnabled && playerHasMoved) {
-                    playerHandler(player, noBootsChance, leatherBootsChance, hasBootsChance, featherFallingChance,
-                            ridingHorseChance, ridingBoatChance, ridingPigChance, sprintingBlockBelowChance,
-                            sprintingBlockAtFeetChance, crouchingBlockBelowChance, crouchingBlockAtFeetChance,
-                            blockAtFeetSwitcherConfig, blockBelowSwitcherConfig);
-                } else if (movementCheckEnabled) {
-                    return;
-                } else {
-                    playerHandler(player, noBootsChance, leatherBootsChance, hasBootsChance, featherFallingChance,
-                            ridingHorseChance, ridingBoatChance, ridingPigChance, sprintingBlockBelowChance,
-                            sprintingBlockAtFeetChance, crouchingBlockBelowChance, crouchingBlockAtFeetChance,
-                            blockAtFeetSwitcherConfig, blockBelowSwitcherConfig);
-                }
-            }
-        }, 0L, attemptFrequency);
-
-        getServer().getPluginManager().registerEvents(this, this);
-
+         // Plugin startup logic
         Bukkit.getConsoleSender()
                 .sendMessage(ChatColor.GOLD + ">>" + ChatColor.GREEN + " DesirePaths " + getDescription().getVersion() + " enabled successfully");
 
@@ -337,48 +308,6 @@ public final class DesirePaths extends JavaPlugin implements Listener {
                 }
             }
         }
-    }
-
-    public void loadConfig() {
-        // initial config attemptFrequency value
-        attemptFrequency = getConfig().getInt("attemptFrequency");
-        // initial config disabledWorlds list
-        disabledWorlds = getConfig().getStringList("disabledWorlds");
-        // initial config movementCheckEnabled boolean
-        movementCheckEnabled = getConfig().getBoolean("movementCheckEnabled");
-        // initial config chanceModifier values
-        noBootsChance = getConfig().getInt("chanceModifiers.NO_BOOTS");
-        leatherBootsChance = getConfig().getInt("chanceModifiers.LEATHER_BOOTS");
-        hasBootsChance = getConfig().getInt("chanceModifiers.HAS_BOOTS");
-        featherFallingChance = getConfig().getInt("chanceModifiers.FEATHER_FALLING");
-        ridingHorseChance = getConfig().getInt("chanceModifiers.RIDING_HORSE");
-        ridingBoatChance = getConfig().getInt("chanceModifiers.RIDING_BOAT");
-        ridingPigChance = getConfig().getInt("chanceModifiers.RIDING_PIG");
-        sprintingBlockBelowChance = getConfig().getInt("chanceModifiers.SPRINTING_BLOCK_BELOW");
-        sprintingBlockAtFeetChance = getConfig().getInt("chanceModifiers.SPRINTING_BLOCK_AT_FEET");
-        crouchingBlockBelowChance = getConfig().getInt("chanceModifiers.CROUCHING_BLOCK_BELOW");
-        crouchingBlockAtFeetChance = getConfig().getInt("chanceModifiers.CROUCHING_BLOCK_AT_FEET");
-        // initial config blockModifications lists
-        blockBelowSwitcherConfig = getConfig().getStringList("blockModifications.blockBelowModifications");
-        blockAtFeetSwitcherConfig = getConfig().getStringList("blockModifications.blockAtFeetModifications");
-        // initial config townyModifiers booleans
-        pathsOnlyWherePlayerCanBreakTowny = getConfig().getBoolean("townyModifiers.pathsOnlyWherePlayerCanBreak");
-        pathsInWildernessTowny = getConfig().getBoolean("townyModifiers.pathsInWilderness");
-        noPathsInAnyTown = getConfig().getBoolean("townyModifiers.noPathsInAnyTown");
-        // initial config griefPreventionIntegration booleans
-        pathsOnlyWherePlayerCanBreakGriefPrevention = getConfig().getBoolean("griefPreventionIntegration.pathsOnlyWherePlayerCanBreak");
-        pathsInWildernessGriefPrevention = getConfig().getBoolean("griefPreventionIntegration.pathsInWilderness");
-        noPathsInAnyClaimGriefPrevention = getConfig().getBoolean("griefPreventionIntegration.noPathsInAnyClaim");
-        // initial config landsIntegration settings
-        displayFlag = getConfig().getBoolean("landsIntegrations.displayFlag");
-        flagDisplayName = getConfig().getString("landsIntegrations.flagDisplayName");
-        flagDisplayDescription = getConfig().getString("landsIntegrations.flagDisplayDescription");
-        flagDisplayMaterial = getConfig().getString("landsIntegrations.flagDisplayMaterial");
-        defaultFlagState = getConfig().getBoolean("landsIntegrations.defaultFlagState");
-        // initial config coreProtectIntegration booleans
-        logPathsToCoreProtect = getConfig().getBoolean("coreProtectIntegrations.logPathsToCoreProtect");
-
-        enableInCreativeMode = getConfig().getBoolean("enableInCreativeMode");
     }
 
     public ToggleManager getToggleManager() {

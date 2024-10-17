@@ -12,7 +12,6 @@ import org.bukkit.configuration.file.YamlConfiguration;
 import me.kermx.desirepaths.DesirePaths;
 
 public class ToggleManager {
-
     private final DesirePaths plugin;
     private final Map<UUID, Boolean> toggleMap = new HashMap<>();
     private boolean maintenanceMode;
