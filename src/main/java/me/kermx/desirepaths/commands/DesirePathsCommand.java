@@ -21,7 +21,7 @@ public class DesirePathsCommand extends DesirePathsSubManager {
 
     /**
      * Calling this constructor we register all sub commands.
-     *
+     * <p>
      * addSubCommand(
      * new SubCommand class,
      * new String[] {"aliases"},
